@@ -4,8 +4,8 @@ resources:
 - deployment.yaml
 - service.yaml
 - ingress.yaml
-namespace: python-app-green
+namespace: python-app-blue
 images:
 - name: hello-gitops
   newName: aramattamara/hello-gitops
-  newTag: d61579b0600194aa1919f9daa50647fee61b094f
+  newTag: c53e4532abfc10d3544b40e764d67249aa06223c
