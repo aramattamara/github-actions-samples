@@ -18,7 +18,7 @@ spec:
         - image: "hello-gitops:local"
           name: hello-gitops-blue-container
           ports:
-            - name: http
+            - name: main
               containerPort: 8050
 ---
 apiVersion: apps/v1
@@ -41,5 +41,5 @@ spec:
         - image: "hello-gitops:local"
           name: hello-gitops
           ports:
-            - name: http
+            - name: main
               containerPort: 8050
