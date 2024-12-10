@@ -3,9 +3,8 @@ kind: Kustomization
 resources:
 - deployment.yaml
 - service.yaml
-- ingress.yaml
 namespace: hello-gitops
 images:
 - name: hello-gitops
-  newName: aramattamara/hello-gitops
-  newTag: af47df7f81a8a3996cdfd0b423986bdc72e8216d
+  newName: hello-gitops
+  newTag: local
