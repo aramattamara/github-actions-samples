@@ -135,7 +135,6 @@ jobs:
         kubectl set image deployment/${{ env.DEP_NEW }} hello-gitops=$DOCKER_USERNAME/hello-gitops:$GITHUB_SHA
         kubectl scale deployment ${{ env.DEP_NEW }} --replicas=3
         kubectl rollout status deployment/${{ env.DEP_NEW }} -w
-        fi
 
     - name: Switch service traffic to the new deployment
       run: |
