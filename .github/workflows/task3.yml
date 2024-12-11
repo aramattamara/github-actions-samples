@@ -103,7 +103,6 @@ jobs:
     - name: Get the GKE credentials so we can deploy to the cluster
       run: |
         gcloud container clusters get-credentials "$GKE_CLUSTER" --region "$GKE_REGION"
-        
 
     - name: Check if namespace is existing
       run: |
@@ -111,61 +110,43 @@ jobs:
         if [ $namespacePresent -eq 0 ]
         then
           kubectl create ns hello-gitops
+          kubectl apply -k k8s/
         else 
           echo "Namespace hello-gitops already existed"
         fi
-        
 
-    - name: Check if deployments and service exist
+    - name: Find live deployment
       run: |
-        deploymentPresentBlue=$(kubectl -n hello-gitops get deployment hello-gitops-blue -o jsonpath="{.spec.replicas}")
-        deploymentPresentGreen=$(kubectl -n hello-gitops get deployment hello-gitops-green -o jsonpath="{.spec.replicas}")
-        serviceExists=$(kubectl get service hello-gitops --ignore-not-found -o jsonpath="{.metadata.name}" || echo "false")
-
-        
-        if [ "$deploymentPresentBlue" == "false" ] && [ "$deploymentPresentGreen" == "false" ]; then
-          echo "NEW_DEPLOYMENT=hello-gitops-blue" >> $GITHUB_ENV
-          echo "OLD_DEPLOYMENT=none" >> $GITHUB_ENV
-        elif [ "$deploymentPresentBlue" == "hello-gitops-blue" ] && [ "$deploymentPresentGreen" == "false" ]; then
-          echo "NEW_DEPLOYMENT=hello-gitops-green" >> $GITHUB_ENV
-          echo "OLD_DEPLOYMENT=hello-gitops-blue" >> $GITHUB_ENV
-        elif  [ "$deploymentPresentBlue" == "false" ] && [ "$deploymentPresentGreen" == "hello-gitops-green" ]; then
-          echo "NEW_DEPLOYMENT=hello-gitops-blue" >> $GITHUB_ENV
-          echo "OLD_DEPLOYMENT=hello-gitops-green" >> $GITHUB_ENV
+        # which deployment is live
+        OLD=$(kubectl -n hello-gitops get service hello-gitops -o jsonpath="{.spec.selector.app}")
+        if [[ $OLD == 'hello-gitops-blue' ]]; then
+          NEW=hello-gitops-blue
         else
-           echo "Both Blue and Green deployment are present! Exiting"
-           exit 1
+          NEW=hello-gitops-green
         fi
+        echo "DEP_OLD=$OLD" >> "$GITHUB_ENV"
+        echo "DEP_NEW=$NEW" >> "$GITHUB_ENV"
 
     - name: Create or update the new deployment
       env:
         DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME}}
       run: |
-        if [ "$OLD_DEPLOYMENT" == "none" ]; then
-        # Create a new deployment and service for the first time
-        kubectl create deployment ${{ env.NEW_DEPLOYMENT }} --image=$DOCKER_USERNAME/hello-gitops:$GITHUB_SHA
-        kubectl scale deployment ${{ env.NEW_DEPLOYMENT }} --replicas=3
-        kubectl expose deployment ${{ env.NEW_DEPLOYMENT }} --name=hello-gitops --port=80 --target-port=8080
-        else
-        # Update the new deployment
-        kubectl set image deployment/${{ env.NEW_DEPLOYMENT }} hello-gitops=$DOCKER_USERNAME/hello-gitops:$GITHUB_SHA
-        kubectl scale deployment ${{ env.NEW_DEPLOYMENT }} --replicas=3
-        kubectl rollout status deployment/${{ env.NEW_DEPLOYMENT }} -w
+        kubectl set image deployment/${{ env.DEP_NEW }} hello-gitops=$DOCKER_USERNAME/hello-gitops:$GITHUB_SHA
+        kubectl scale deployment ${{ env.DEP_NEW }} --replicas=3
+        kubectl rollout status deployment/${{ env.DEP_NEW }} -w
         fi
 
     - name: Switch service traffic to the new deployment
       run: |
-        if [ "$OLD_DEPLOYMENT" != "none" ]; then 
-          kubectl patch service hello-gitops -p '{"spec":{"selector":{"app":"hello-gitops-green-pod"}}}'
-        fi
-        echo "Service traffic switched to ${{ env.NEW_DEPLOYMENT }}"
+        NEW_POD=$(kubectl -n hello-gitops get deployment ${{ env.DEP_NEW }} -o jsonpath="{.spec.template.metadata.labels.app}")
+        kubectl patch service hello-gitops -p "{\"spec\":{\"selector\":{\"app\":\"$NEW_POD\"}}}"
+        echo "Service traffic switched to $NEW_POD"
 
     - name: Scale down old deployment
       run: |
-        if [ "$OLD_DEPLOYMENT" != none ]; then
-          kubectl scale deployment ${{ env.OLD_DEPLOYMENT }} --replicas=0
-          echo "Scaled down deployment ${{ env.OLD_DEPLOYMENT }}"
-        fi
+        kubectl scale deployment ${{ env.DEP_OLD }} --replicas=0
+        echo "Scaled down deployment ${{ env.DEP_OLD }}
+
 
 # is_blue=$(kubectl -n hello-gitops get deployment hello-gitops-blue -o jsonpath="{.spec.replicas}")
 # is_green=$(kubectl -n hello-gitops get deployment hello-gitops-green -o jsonpath="{.spec.replicas}")

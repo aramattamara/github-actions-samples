@@ -28,7 +28,7 @@ metadata:
     app: hello-gitops-green
   name: hello-gitops-green
 spec:
-  replicas: 3
+  replicas: 0
   selector:
     matchLabels:
       app: hello-gitops-green-pod
