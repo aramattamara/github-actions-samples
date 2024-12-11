@@ -16,7 +16,7 @@ spec:
     spec:
       containers:
         - image: "hello-gitops:local"
-          name: hello-gitops-blue-container
+          name: hello-gitops
           ports:
             - name: main
               containerPort: 8050
