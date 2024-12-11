@@ -142,10 +142,10 @@ jobs:
         kubectl patch service hello-gitops -p "{\"spec\":{\"selector\":{\"app\":\"$NEW_POD\"}}}"
         echo "Service traffic switched to $NEW_POD"
 
-    - name: scale down old deployment
+    - name: Scale down old deployment
       run: |
-       kubectl scale deployment ${{ env.dep_old }} --replicas=0
-        echo "scaled down deployment ${{ env.dep_old }}
+       kubectl scale deployment ${{ env.DEP_OLD }} --replicas=0
+        echo "Scaled down deployment ${{ env.DEP_OLD }}
 
 
 # is_blue=$(kubectl -n hello-gitops get deployment hello-gitops-blue -o jsonpath="{.spec.replicas}")
