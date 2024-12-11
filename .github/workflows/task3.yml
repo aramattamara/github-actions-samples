@@ -104,7 +104,7 @@ jobs:
       run: |
         gcloud container clusters get-credentials "$GKE_CLUSTER" --region "$GKE_REGION"
 
-    - name: Check if namespace is existing
+    - name: Check if namespace exists
       run: |
         namespacePresent=`kubectl get ns | grep hello-gitops | wc -l`
         if [ $namespacePresent -eq 0 ]
@@ -150,7 +150,7 @@ jobs:
     - name: Scale down old deployment
       run: |
         kubectl scale deployment ${{ env.DEP_OLD }} --replicas=0
-        echo "Scaled down deployment ${{ env.DEP_OLD }}
+        echo "Scaled down deployment ${{ env.DEP_OLD }}"
 
 
 # is_blue=$(kubectl -n hello-gitops get deployment hello-gitops-blue -o jsonpath="{.spec.replicas}")
