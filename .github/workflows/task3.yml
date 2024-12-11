@@ -1,0 +1,170 @@
+name: CI/CD Blue-Green Deployment
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./app
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.10"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install flake8 pytest
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+      - name: Lint with flake8
+        run: |
+          # stop the build if there are Python syntax errors or undefined names
+          flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+          # exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
+          flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+
+      - name: Test with pytest
+        run: |
+          pytest
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        id: buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Cache Docker layers
+        uses: actions/cache@v3
+        with:
+          path: /tmp/.buildx-cache
+          key: ${{ runner.os }}-buildx-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-buildx-
+
+      - uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: ./app
+          file: ./app/Dockerfile
+          builder: ${{ steps.buildx.outputs.name }}
+          push: true
+          tags: ${{ secrets.DOCKER_USERNAME }}/hello-gitops:${{ github.sha }}, ${{ secrets.DOCKER_USERNAME }}/hello-gitops:latest
+          platforms: linux/amd64,linux/arm64
+          cache-from: type=local,src=/tmp/.buildx-cache
+          cache-to: type=local,dest=/tmp/.buildx-cache
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+
+    env:
+      PROJECT_ID: ${{ secrets.GKE_PROJECT }}
+      GKE_CLUSTER: autopilot-cluster-1
+      GKE_REGION: us-central1
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+
+    - name: Setup Kustomize
+      uses: imranismail/setup-kustomize@v1
+      with:
+        kustomize-version: "3.6.1"
+
+    # Auth CLI to GCloud
+    - name: Authenticate to Google Cloud
+      uses: 'google-github-actions/auth@v2'
+      with:
+        credentials_json: '${{ secrets.GCP_CREDENTIALS }}'
+
+    - name: Set up Cloud SDK
+      uses: google-github-actions/setup-gcloud@v2
+      with:
+        install_components: 'gke-gcloud-auth-plugin'
+
+    - name: Get the GKE credentials so we can deploy to the cluster
+      run: |
+        gcloud container clusters get-credentials "$GKE_CLUSTER" --region "$GKE_REGION"
+
+
+    - name: Check if deployments and service exist
+      run: |
+        deploymentPresentBlue=$(kubectl get deployment hello-gitops-blue --ignore-not-found -o jsonpath="{.metadata.name}" || echo "false")
+        deploymentPresentGreen=$(kubectl get deployment hello-gitops-green --ignore-not-found -o jsonpath="{.metadata.name}" || echo "false")
+        serviceExists=$(kubectl get service hello-gitops --ignore-not-found -o jsonpath="{.metadata.name}" || echo "false")
+        
+        if [ "$deploymentPresentBlue" == "false" ] && [ "$deploymentPresentGreen" == "false" ]; then
+          echo "NEW_DEPLOYMENT=hello-gitops-blue" >> $GITHUB_ENV
+          echo "OLD_DEPLOYMENT=none" >> $GITHUB_ENV
+        elif [ "$deploymentPresentBlue" == "hello-gitops-blue" ] && [ "$deploymentPresentGreen" == "false" ]; then
+          echo "NEW_DEPLOYMENT=hello-gitops-green" >> $GITHUB_ENV
+          echo "OLD_DEPLOYMENT=hello-gitops-blue" >> $GITHUB_ENV
+        elif  [ "$deploymentPresentBlue" == "false" ] && [ "$deploymentPresentGreen" == "hello-gitops-green" ]; then
+           echo "NEW_DEPLOYMENT=hello-gitops-blue" >> $GITHUB_ENV
+          echo "OLD_DEPLOYMENT=hello-gitops-green" >> $GITHUB_ENV
+        else
+           echo "Both Blue and Green deployment are present! Exiting"
+           exit 1
+        fi
+
+    - name: Create or update the new deployment
+      env:
+        DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME}}
+      run: |
+        if [ "$OLD_DEPLOYMENT" == "none" ]; then
+        # Create a new deployment and service for the first time
+        kubectl create deployment ${{ env.NEW_DEPLOYMENT }} --image=$DOCKER_USERNAME/hello-gitops:$GITHUB_SHA
+        kubectl scale deployment ${{ env.NEW_DEPLOYMENT }} --replicas=3
+        kubectl expose deployment ${{ env.NEW_DEPLOYMENT }} --name=hello-gitops --port=80 --target-port=8080
+        else
+        # Update the new deployment
+        kubectl set image deployment/${{ env.NEW_DEPLOYMENT }} hello-gitops=$DOCKER_USERNAME/hello-gitops:$GITHUB_SHA
+        kubectl scale deployment ${{ env.NEW_DEPLOYMENT }} --replicas=3
+        kubectl rollout status deployment/${{ env.NEW_DEPLOYMENT }} -w
+        fi
+
+    - name: Switch service traffic to the new deployment
+      run: |
+        if [ "$OLD_DEPLOYMENT" != "none" ]; then 
+          kubectl patch service hello-gitops -p '{"spec":{"selector":{"app":"hello-gitops-green-pod"}}}'
+        fi
+        echo "Service traffic switched to ${{ env.NEW_DEPLOYMENT }}"
+
+    - name: Scale down old deployment
+      run: |
+        if [ "$OLD_DEPLOYMENT" != none ]; then
+          kubectl scale deployment ${{ env.OLD_DEPLOYMENT }} --replicas=0
+          echo "Scaled down deployment ${{ env.OLD_DEPLOYMENT }}"
+        fi
+
+# is_blue=$(kubectl -n hello-gitops get deployment hello-gitops-blue -o jsonpath="{.spec.replicas}")
+# is_green=$(kubectl -n hello-gitops get deployment hello-gitops-green -o jsonpath="{.spec.replicas}")
+
+# kubectl -n hello-gitops set image deployment hello-gitops-green hello-gitops=hello-gitops:local2
+# kubectl -n hello-gitops scale deployment hello-gitops-green --replicas 3
+# kubectl -n hello-gitops rollout status deployment hello-gitops-green -w # wait for scale to finish
+
+# kubectl -n hello-gitops patch service hello-gitops -p '{"spec":{"selector":{"app":"hello-gitops-green-pod"}}}'
+# kubectl -n hello-gitops scale deployment hello-gitops-blue --replicas 0
+
+
+
+
