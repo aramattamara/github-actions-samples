@@ -114,11 +114,12 @@ jobs:
         else 
           echo "Namespace hello-gitops already existed"
         fi
+        kubectl config set-context --current --namespace=hello-gitops
 
     - name: Find live deployment
       run: |
         # which deployment is live
-        OLD=$(kubectl -n hello-gitops get service hello-gitops -o jsonpath="{.spec.selector.app}")
+        OLD=$(kubectl get service hello-gitops -o jsonpath="{.spec.selector.app}")
         if [[ $OLD == 'hello-gitops-blue' ]]; then
           NEW=hello-gitops-blue
         else
@@ -142,10 +143,10 @@ jobs:
         kubectl patch service hello-gitops -p "{\"spec\":{\"selector\":{\"app\":\"$NEW_POD\"}}}"
         echo "Service traffic switched to $NEW_POD"
 
-    - name: Scale down old deployment
+    - name: scale down old deployment
       run: |
-        kubectl scale deployment ${{ env.DEP_OLD }} --replicas=0
-        echo "Scaled down deployment ${{ env.DEP_OLD }}
+       kubectl scale deployment ${{ env.dep_old }} --replicas=0
+        echo "scaled down deployment ${{ env.dep_old }}
 
 
 # is_blue=$(kubectl -n hello-gitops get deployment hello-gitops-blue -o jsonpath="{.spec.replicas}")
