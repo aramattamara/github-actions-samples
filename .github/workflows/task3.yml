@@ -111,6 +111,10 @@ jobs:
         deploymentPresentGreen=$(kubectl get deployment hello-gitops-green --ignore-not-found -o jsonpath="{.metadata.name}" || echo "false")
         serviceExists=$(kubectl get service hello-gitops --ignore-not-found -o jsonpath="{.metadata.name}" || echo "false")
         
+        echo "Blue Deployment: $deploymentPresentBlue"
+        echo "Green Deployment: $deploymentPresentGreen"
+        echo "Service: $serviceExists"
+        
         if [ "$deploymentPresentBlue" == "false" ] && [ "$deploymentPresentGreen" == "false" ]; then
           echo "NEW_DEPLOYMENT=hello-gitops-blue" >> $GITHUB_ENV
           echo "OLD_DEPLOYMENT=none" >> $GITHUB_ENV
