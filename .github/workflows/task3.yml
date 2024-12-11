@@ -119,14 +119,20 @@ jobs:
     - name: Find live deployment
       run: |
         # which deployment is live
-        OLD=$(kubectl get service hello-gitops -o jsonpath="{.spec.selector.app}")
-        if [[ $OLD == 'hello-gitops-blue' ]]; then
-          NEW=hello-gitops-blue
-        else
+        OLD_POD=$(kubectl get service hello-gitops -o jsonpath="{.spec.selector.app}")
+        if [[ $OLD == 'hello-gitops-blue-pod' ]]; then
+          OLD=hello-gitops-blue
           NEW=hello-gitops-green
+          NEW_POD=hello-gitops-green-pod
+        else
+          OLD=hello-gitops-green
+          NEW=hello-gitops-blue
+          NEW_POD=hello-gitops-blue-pod
         fi
         echo "DEP_OLD=$OLD" >> "$GITHUB_ENV"
         echo "DEP_NEW=$NEW" >> "$GITHUB_ENV"
+        echo "DEP_NEW_POD=$NEW_POD" >> "$GITHUB_ENV"
+        echo "DEP_OLD_POD=$OLD_POD" >> "$GITHUB_ENV"
 
     - name: Create or update the new deployment
       env:
@@ -138,13 +144,12 @@ jobs:
 
     - name: Switch service traffic to the new deployment
       run: |
-        NEW_POD=$(kubectl -n hello-gitops get deployment ${{ env.DEP_NEW }} -o jsonpath="{.spec.template.metadata.labels.app}")
-        kubectl patch service hello-gitops -p "{\"spec\":{\"selector\":{\"app\":\"$NEW_POD\"}}}"
+        kubectl patch service hello-gitops -p '{"spec":{"selector":{"app":"${{ env.DEP_NEW_POD }}"}}}'
         echo "Service traffic switched to $NEW_POD"
 
     - name: Scale down old deployment
       run: |
-       kubectl scale deployment ${{ env.DEP_OLD }} --replicas=0
+        kubectl scale deployment ${{ env.DEP_OLD }} --replicas=0
         echo "Scaled down deployment ${{ env.DEP_OLD }}
 
 
