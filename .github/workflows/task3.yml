@@ -103,17 +103,25 @@ jobs:
     - name: Get the GKE credentials so we can deploy to the cluster
       run: |
         gcloud container clusters get-credentials "$GKE_CLUSTER" --region "$GKE_REGION"
+        
 
+    - name: Check if namespace is existing
+      run: |
+        namespacePresent=`kubectl get ns | grep hello-gitops | wc -l`
+        if [ $namespacePresent -eq 0 ]
+        then
+          kubectl create ns hello-gitops
+        else 
+          echo "Namespace hello-gitops already existed"
+        fi
+        
 
     - name: Check if deployments and service exist
       run: |
-        deploymentPresentBlue=$(kubectl get deployment hello-gitops-blue --ignore-not-found -o jsonpath="{.metadata.name}" || echo "false")
-        deploymentPresentGreen=$(kubectl get deployment hello-gitops-green --ignore-not-found -o jsonpath="{.metadata.name}" || echo "false")
+        deploymentPresentBlue=$(kubectl -n hello-gitops get deployment hello-gitops-blue -o jsonpath="{.spec.replicas}")
+        deploymentPresentGreen=$(kubectl -n hello-gitops get deployment hello-gitops-green -o jsonpath="{.spec.replicas}")
         serviceExists=$(kubectl get service hello-gitops --ignore-not-found -o jsonpath="{.metadata.name}" || echo "false")
-        
-        echo "Blue Deployment: $deploymentPresentBlue"
-        echo "Green Deployment: $deploymentPresentGreen"
-        echo "Service: $serviceExists"
+
         
         if [ "$deploymentPresentBlue" == "false" ] && [ "$deploymentPresentGreen" == "false" ]; then
           echo "NEW_DEPLOYMENT=hello-gitops-blue" >> $GITHUB_ENV
@@ -122,7 +130,7 @@ jobs:
           echo "NEW_DEPLOYMENT=hello-gitops-green" >> $GITHUB_ENV
           echo "OLD_DEPLOYMENT=hello-gitops-blue" >> $GITHUB_ENV
         elif  [ "$deploymentPresentBlue" == "false" ] && [ "$deploymentPresentGreen" == "hello-gitops-green" ]; then
-           echo "NEW_DEPLOYMENT=hello-gitops-blue" >> $GITHUB_ENV
+          echo "NEW_DEPLOYMENT=hello-gitops-blue" >> $GITHUB_ENV
           echo "OLD_DEPLOYMENT=hello-gitops-green" >> $GITHUB_ENV
         else
            echo "Both Blue and Green deployment are present! Exiting"
